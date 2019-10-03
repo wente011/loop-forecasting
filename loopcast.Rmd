@@ -1,0 +1,64 @@
+---
+title: "Loop Cast"
+output: html_document
+author: Jordan Wente
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(imputeTS)
+library(lubridate)
+library(magrittr)
+library(xts)
+library(bizdays)
+library(timeDate)
+```
+```{r data load,include=FALSE,show=FALSE}
+
+data<-read_csv("loop-load_2019-09-24-16-35-03.csv")
+
+summary(data)
+data$recs<-seq(1,length(data$`Virtual.zzXcel_Total#Block Demand Real Power#kW`))
+data[data$recs %in% errs,]
+
+
+data[is.na(data[,2]),2]<-data[is.na(data[,2]),3]
+recs<-data$recs
+
+data$Timestamp %<>% mdy_hm() 
+
+errs<-data[is.na(data$Timestamp),4]
+
+
+names(data)<-c("time","block","real")   #all units in kW
+
+data$block %<>% na_interpolation()  #linear interpolation for the remaining datapoints that don't print
+
+tz(data$time)<-"America/Chicago"
+
+apply.hourly <- function(x, FUN,...) {
+  ep <- endpoints(x, 'hours')
+  period.apply(x, ep, FUN, ...)
+}
+
+```
+
+
+First, I will need to create exogenous variables like holidays etc..
+
+
+```{r time series}
+
+ys<- data$time %>% year() %>% as.factor %>% levels() %>% as.numeric()
+hols<- ys %>%  holidayNYSE %>% as.Date
+
+data$holiday<-0
+data$holiday[as.Date(data$time) %in% hols]<-1  # These seems to work pretty well. 
+
+data$weekday<-data$time %>% isWeekday() %>% as.numeric
+
+data$block.ts<-as.xts(data$block,order.by=data$time)
+
+```
+
