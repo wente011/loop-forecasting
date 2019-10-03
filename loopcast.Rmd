@@ -8,6 +8,8 @@ author: Jordan Wente
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(imputeTS)
+library(rnoaa)
+library(dygraphs)
 library(lubridate)
 library(magrittr)
 library(xts)
@@ -34,7 +36,7 @@ names(data)<-c("time","block","real")   #all units in kW
 
 data$block %<>% na_interpolation()  #linear interpolation for the remaining datapoints that don't print
 
-tz(data$time)<-"America/Chicago" 
+#tz(data$time)<-"America/Chicago"  Not necessary 
 #apply.hourly <- function(x, FUN,...) {
 #  ep <- endpoints(x, 'hours')
 #  period.apply(x, ep, FUN, ...)
@@ -49,14 +51,55 @@ First, I will need to create exogenous variables like holidays etc..
 ```{r time series}
 
 ys<- data$time %>% year() %>% as.factor %>% levels() %>% as.numeric()
-hols<- ys %>%  holidayNYSE %>% as.Date
+hols<- ys %>%  holidayNYSE %>% as.Date              #Using the NYSE as a hoilday database. 
 
-data$holiday<-0
-data$holiday[as.Date(data$time) %in% hols]<-1  # These seems to work pretty well. 
+data$hour<-hour(data$time)
+data$date<-as.Date(data$time)
+data$block<-data$block*.25    #converting to kWh
+data$holiday %<>% as.factor()
+data$weekday %<>% as.factor()
 
-data$weekday<-data$time %>% isWeekday() %>% as.numeric
+#convert to hourly time series
 
-data$block.ts<-as.xts(data$block,order.by=data$time)
+data2<- data %>% group_by(hour,date) %>% summarise_at("block",sum) %>% mutate(time=paste0(date," ",hour,":","00")) %>% mutate_at("time",ymd_hm) %>% arrange(time) 
+
+data2$weekday<-data2$time %>% isWeekday() %>% as.numeric
+data2$holiday<-0
+data2$holiday[as.Date(data2$time) %in% hols]<-1  # These seems to work pretty well. 
 
 ```
+
+
+```{r weather data, include=FALSE}
+#Run the "functions": script to get the hourly weather data function, data is downloaded from: http://mesonet.agron.iastate.edu/request/download.phtml?network=MN_ASOS
+#Made this other function because it was too heavy and I just needed something simpler. 
+
+
+tz_data<-"America%2FChicago" #TZ - get it in the TZ you want. 
+
+td<-today()
+
+msp.w<-getMSPw(station="STP",2013,01,01,year2=year(td),month2=month(td),day2=day(td),tz_data = tz_data)
+
+msp.w$valid %<>% as.character()
+msp.w2<-msp.w[is.na(msp.w$tmpf)==F,]
+      
+
+```
+
+```{r write and merge weather file, include=FALSE}
+msp.w$valid %<>% as.character() %>% ymd_hm()
+
+```
+
+
+
+```{r timeseries creation}
+data2$ts<-xts(data2$block,order.by = data2$time,frequency = 24)
+data2$ts %>% dygraph() %>% dyOptions(useDataTimezone = TRUE)
+
+
+
+```
+
 
