@@ -15,17 +15,17 @@ library(magrittr)
 library(xts)
 library(timeDate)
 ```
+
 ```{r data load,include=FALSE,show=FALSE}
 
-data<-read_csv("loop-load_2019-09-24-16-35-03.csv")
+data<-read_csv("loop2.csv")
 
 summary(data)
-data$recs<-seq(1,length(data$`Virtual.zzXcel_Total#Block Demand Real Power#kW`))
+#data$recs<-seq(1,length(data$`Virtual.zzXcel_Total#Block Demand Real Power#kW`))
 #data[data$recs %in% errs,]
 
 
 data[is.na(data[,2]),2]<-data[is.na(data[,2]),3]
-recs<-data$recs
 
 data$Timestamp %<>% mdy_hm() 
 
@@ -56,8 +56,7 @@ hols<- ys %>%  holidayNYSE %>% as.Date              #Using the NYSE as a hoilday
 data$hour<-hour(data$time)
 data$date<-as.Date(data$time)
 data$block<-data$block*.25    #converting to kWh
-data$holiday %<>% as.factor()
-data$weekday %<>% as.factor()
+
 
 #convert to hourly time series
 
@@ -78,8 +77,9 @@ data2$holiday[as.Date(data2$time) %in% hols]<-1  # These seems to work pretty we
 tz_data<-"America%2FChicago" #TZ - get it in the TZ you want. 
 
 td<-today()
+#this function is simple and downloads data for a single year. Downloads the data to a temp file. 
 
-msp.w<-getMSPw(station="STP",2013,01,01,year2=year(td),month2=month(td),day2=day(td),tz_data = tz_data)
+msp.w<-getMSPw(station="MSP",2013,01,01,year2=year(td),month2=month(td),day2=day(td),tz_data = tz_data)
 
 msp.w$valid %<>% as.character()
 msp.w2<-msp.w[is.na(msp.w$tmpf)==F,]
@@ -88,17 +88,45 @@ msp.w2<-msp.w[is.na(msp.w$tmpf)==F,]
 ```
 
 ```{r write and merge weather file, include=FALSE}
-msp.w$valid %<>% as.character() %>% ymd_hm()
+
+
+msp.w2$valid %<>% as.character() %>% ymd_hm()
+
+msp.w2$date<-as.Date(msp.w2$valid)
+msp.w2$hour<-hour(msp.w2$valid)
+
+
+d2<-left_join(data2,msp.w2)
+
+d2$tmpf %<>% na_interpolation()
+d2$dwpf %<>% na_interpolation()
+d2$sknt %<>% na_interpolation()
+d2$p01i %<>% as.numeric() %>% na_interpolation()
 
 ```
 
 
 
 ```{r timeseries creation}
-data2$ts<-xts(data2$block,order.by = data2$time,frequency = 24)
-data2$ts %>% dygraph() %>% dyOptions(useDataTimezone = TRUE)
+d2$ts<-xts(d2$block,order.by = d2$time,frequency = 24)
+d2$ts %>% dygraph() %>% dyOptions(useDataTimezone = TRUE)
+d2$week<- week(d2$time) %>% as.factor()
+d2$month<-month(d2$time) %>% as.factor()
+d2$year<-year(d2$time) %>% as.factor()
 
 
+
+peaks<- d2 %>% group_by(month,year) %>% summarize_at("block",max) 
+names(peaks)<-c("month","year","peak")
+
+d2<-left_join(d2,peaks)
+d2$bln<-d2$block/d2$peak
+
+d2$bts<- as.xts(d2$bln,order.by=d2$time,frequency=24)
+
+mods<- c("beta_regression","neural_network","arimax","ets") %>% enframe() 
+
+mods %>% group_by(value) %>% mutate(data=nest(d2))
 
 ```
 

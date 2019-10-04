@@ -82,12 +82,14 @@ for (network in networks){
 
 tz_data<-"America%2FChicago" #TZ
 
+#for a given station, this seems to work much, much better
 getMSPw<-function(station,year1,month1,day1,year2,month2,day2,tz_data){
       url<-paste0("http://mesonet.agron.iastate.edu/cgi-bin/request/asos.py?station=",station,"&data=&year1=",year1,"&month1=",month1,"&day1=",day1,"&year2=",year2,"&month2=",month2,"&day2=",day2,"&tz=",tz_data,"&format=onlycomma&latlon=no&missing=empty&trace=T&direct=no&report_t")
       tmp<-tempfile()
       download.file(url,dest=tmp)
-      as_tibble(read.table(tmp,sep=",",header=T))
-      
+      p<- as_tibble(read.table(tmp,sep=",",header=T))
+      unlink(tmp)
+      return(p)
 }
     
 td<-today()
