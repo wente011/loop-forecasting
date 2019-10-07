@@ -137,8 +137,8 @@ d2$bln<-d2$block/d2$peak
 
 d2$bts<- as.xts(d2$bln,order.by=d2$time,frequency=24)
 
-#trying to fit models with watay too much data
-mods<-c("beta_reg","narx1","arimax1","ets1","tbats1") %>% enframe() %>% mutate(data=rep(list(d2),nrow(.))) %>% mutate(train=rep(list(d2[d2$date<"2018-10-10" & d2$date>"2017-10-09",]))) %>% mutate(test=rep(list(d2[d2$date<"2019-10-3" & d2$date>"2018-10-10",])))
+#Cutting down the training 
+mods<-c("beta_reg","narx1","arimax1","ets1","tbats1") %>% enframe() %>% mutate(data=rep(list(d2),nrow(.))) %>% mutate(train=rep(list(d2[d2$date>"2019-06-01" & d2$date<"2019-08-30",]))) %>% mutate(test=rep(list(d2[ d2$date>"2019-08-30",])))
 
 #Little to no relationship between temperature and block demand, it should seem. 
 
@@ -182,7 +182,7 @@ beta_reg_fn<-function(x){
 }
 
 
-beta_reg<-mods$train[[1]] %>% beta_reg()
+beta_reg<-mods$train[[1]] %>% beta_reg_fn()
 
 ah=48
 pp <- list(list("diff", "auto"))
