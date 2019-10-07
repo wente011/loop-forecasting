@@ -7,13 +7,20 @@ author: Jordan Wente
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
+library(tidyquant)
 library(imputeTS)
 library(rnoaa)
 library(dygraphs)
 library(lubridate)
 library(magrittr)
 library(xts)
+library(betareg)
 library(timeDate)
+#remotes::install_github("fnoorian/mltsp")
+library(mltsp)
+library(e1071)
+
+
 ```
 
 ```{r data load,include=FALSE,show=FALSE}
@@ -46,6 +53,9 @@ data$block %<>% na_interpolation()  #linear interpolation for the remaining data
 
 
 First, I will need to create exogenous variables like holidays etc..
+
+
+
 
 
 ```{r time series}
@@ -83,38 +93,41 @@ msp.w<-getMSPw(station="MSP",2013,01,01,year2=year(td),month2=month(td),day2=day
 
 msp.w$valid %<>% as.character()
 msp.w2<-msp.w[is.na(msp.w$tmpf)==F,]
-      
+msp.w<-NULL      
 
 ```
 
 ```{r write and merge weather file, include=FALSE}
-
-
 msp.w2$valid %<>% as.character() %>% ymd_hm()
 
 msp.w2$date<-as.Date(msp.w2$valid)
 msp.w2$hour<-hour(msp.w2$valid)
+vars<-c("tmpf","dwpf","p01i","vsby","sknt")
+
+#need to ensure the variables are converted to numeric first. 
+na_inter<-function(x){
+ p<-as.numeric(x) 
+ a<-na_interpolation(p)
+ return(a)
+}
+  
+msp.w2<- msp.w2 %>% mutate_at(vars,na_inter) %>% group_by(hour,date) %>% summarize_at(vars,mean,na.rm=T) %>% ungroup()
+              
+d2<-left_join(data2,msp.w2) %>% mutate_at(vars,na_inter) %>% ungroup()
 
 
-d2<-left_join(data2,msp.w2)
-
-d2$tmpf %<>% na_interpolation()
-d2$dwpf %<>% na_interpolation()
-d2$sknt %<>% na_interpolation()
-d2$p01i %<>% as.numeric() %>% na_interpolation()
 
 ```
 
 
-
 ```{r timeseries creation}
+library(tseries)
 d2$ts<-xts(d2$block,order.by = d2$time,frequency = 24)
-d2$ts %>% dygraph() %>% dyOptions(useDataTimezone = TRUE)
+frequency(d2$ts)<-24
+
 d2$week<- week(d2$time) %>% as.factor()
 d2$month<-month(d2$time) %>% as.factor()
 d2$year<-year(d2$time) %>% as.factor()
-
-
 
 peaks<- d2 %>% group_by(month,year) %>% summarize_at("block",max) 
 names(peaks)<-c("month","year","peak")
@@ -124,10 +137,71 @@ d2$bln<-d2$block/d2$peak
 
 d2$bts<- as.xts(d2$bln,order.by=d2$time,frequency=24)
 
-mods<- c("beta_regression","neural_network","arimax","ets") %>% enframe() 
+#trying to fit models with watay too much data
+mods<-c("beta_reg","narx1","arimax1","ets1","tbats1") %>% enframe() %>% mutate(data=rep(list(d2),nrow(.))) %>% mutate(train=rep(list(d2[d2$date<"2018-10-10" & d2$date>"2017-10-09",]))) %>% mutate(test=rep(list(d2[d2$date<"2019-10-3" & d2$date>"2018-10-10",])))
 
-mods %>% group_by(value) %>% mutate(data=nest(d2))
+#Little to no relationship between temperature and block demand, it should seem. 
+
+#arima model
+#suggests an arima(0,1,5 model)
+arimax1<-mods$train[[3]]$ts %>% log() %>%  auto.arima(xreg=as.matrix(mods$train[[3]][,5:6]))
+
+
+#fit an auto-arima model. 
+
+
+
 
 ```
+
+Alright, got my modeling framework set up. now let's construct the model functions. Starting with the classical Box-Jenkins approach among others.
+
+From literature review: ANN with Bayesian Regulation backpropagation for peak forecasts and 
+ARX with Bayesian Regulation back-propagation showed the best overall performance on day ahead hourly.
+
+The nonlinear autoregressive network with exogenous inputs(NARX) is a mixture of Neural Network and Time Series methodsand is based on the linear Auto Regressive Model with Exogenousinputs (ARX)
+
+```{r small train set}
+
+
+
+```
+
+
+
+```{r model functions}
+#may want to break up model up. HOw many differences to get the time series stationary.
+
+ndiffs(log(mods$train[[1]]$ts))  #apparently it's only one. 
+
+# Beta regression
+beta_reg_fn<-function(x){
+      x$bln[x$bln==1]<-.9999999     #a super high probability of hitting peak demand
+      f<-formula(bln~month+hour+tmpf +dwpf + p01i + vsby + sknt + holiday + weekday)
+     fit<-betareg(data=x,formula=f,link="logit")
+}
+
+
+beta_reg<-mods$train[[1]] %>% beta_reg()
+
+ah=48
+pp <- list(list("diff", "auto"))
+fx <- function(x) cbind(x, lag_windows(x, p = 168))  #360 hour length variables
+ln <- SimpleLM
+fcster <- mltsp_forecaster(pp, fx, ln)
+narx1<-fcster
+
+res<-fcster(mods$train[[1]]$ts, h=48)
+
+vals<-merge.xts(res,mods$test[[1]]$ts[1:ah])
+dygraph(vals)
+
+#What's the mape?
+mape(vals[,2],vals[,1])   #3.34% mean percent error
+
+
+```
+
+
 
 
