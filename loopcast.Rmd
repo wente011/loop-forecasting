@@ -112,8 +112,6 @@ na_inter<-function(x){
 }
   
 msp.w2<- msp.w2 %>% mutate_at(vars,na_inter) %>% group_by(hour,date) %>% summarize_at(vars,mean,na.rm=T) %>% ungroup()
-              
-d2<-left_join(data2,msp.w2) %>% mutate_at(vars,na_inter) %>% ungroup()
 
 
 
@@ -122,14 +120,19 @@ d2<-left_join(data2,msp.w2) %>% mutate_at(vars,na_inter) %>% ungroup()
 
 ```{r timeseries creation}
 library(tseries)
+              
+d2<-left_join(data2,msp.w2) %>% mutate_at(vars,na_inter) %>% ungroup()
 
 
-d2$ts<-xts(d2$block,order.by=d2$time,frequency=24)
-attr(d2$ts,"frequency")<-24
+#d2$ts<-msts(d2$block, seasonal.periods=c(24, 7*24, 365*24))
+#attr(d2$ts,"frequency")<-24
 
 d2$week<- week(d2$time) %>% as.factor()
 d2$month<-month(d2$time) %>% as.factor()
 d2$year<-year(d2$time) %>% as.factor()
+d2$day<-day(d2$time)
+
+d2$weekday<-ifelse(d2$holiday==1,0,d2$weekday)
 
 peaks<- d2 %>% group_by(month,year) %>% summarize_at("block",max) 
 names(peaks)<-c("month","year","peak")
@@ -137,8 +140,7 @@ names(peaks)<-c("month","year","peak")
 d2<-left_join(d2,peaks)
 d2$bln<-d2$block/d2$peak
 
-d2$bts<- as.xts(d2$bln,order.by=d2$time,frequency=24)
-
+#d2$bts<- as.xts(d2$bln,order.by=d2$time,frequency=24)
 #Cutting down the training 
 #arima<-c(seq(1,12)) %>% enframe() %>% mutate(train=rep(list(d2[d2$date>"2017-10-03" & d2$date<"2018-10-02",]))) %>% mutate(test=rep(list(d2[ d2$date>"2018-10-02",])))
   
@@ -148,30 +150,76 @@ test<-d2[d2$date>"2018-10-02",] %>% group_by(month) %>% nest()
 names(test)<-c("month","test")
 mods<-left_join(train,test)
 
+msts_fn<-function(df){          #This function assumes that the data has already been split by month. 
+ ds<-max(df$day) #get the maximum number of days
+  y<-msts(df$block, seasonal.periods=c(24,7*24))
+  df$msts1<-y
+  return(df)
+}
+
+mods<- mods %>% mutate(data=map(data,msts_fn))
+
+#Testing the tbats model
 
 arima_fn<-function(df){
-  xreg1=as.matrix(df[,c(1,5)])      #need to make sure that column order                   xreg = xreg               doesn't get messed up here.
-  auto.arima(df$ts) 
+  xreg1=as.matrix(df$weekday)          
+  auto.arima(df$msts1,xreg=xreg1)              
 }
 
 
 ############################## linear models ######################
-lm_mod<-function(df){
-  lm(data=df,block~hour + weekday + holiday + tmpf + dwpf + p01i + vsby + sknt
-    }
-
 
 #mod1<-mods$data[[1]] %>% arima_fn()
 
 
-mods<-mods %>% mutate(arima=map(data,arima_fn))
+#mods<-mods %>% mutate(arima=map(data,arima_fn))
 #Very long load time, so saved a copy to avoid re-fitting the arimas. 
 #(mods,file="mods_with_arima.RData")
 
-mods<-mods %>% mutate(lnmods=map(data,lm_mod))
 
+############### regression tree ##################
+
+
+
+```
+
+TBATS model (Exponential smoothing state space model with Box-Cox transformation, ARMA errors, Trend and Seasonal components). In theory, this should be the ideal catch all simple model. The TBATS is good at handling multiple seasonalities in the time series - which clearly captiol loop load has. Also, we should be able to extract elements from the tbats and then run random forest forecasts with the output. 
+
+```{r tbats model}
+tbats.fn<-function(df){
+  dt<-df$msts1
+  tbats(dt,use.arma.errors = T)
+}
+
+test<-mods$data[[1]]$msts1 %>% mstl() %>% autoplot()  #This is a much better decomposition.
+
+mstl_fn<-function(df){
+  dt<-df$msts1
+  mstl(dt)
+}
+  
+#mods<-mods %>% mutate(tbats.mod=map(data,tbats.fn))
+
+mods<-mods %>% mutate(arimax1=map(data,arima_fn))
+
+mods$month %<>% as.character() %>% as.numeric()
+
+mods<-mods %>% mutate(mstl1=map(data,mstl_fn)) %>% arrange(month)
+
+
+
+#gg.dcom<-lapply(mods$mstl1,autoplot) 
+#gg.dcom
+
+forecast(mods$arimax1[[10]],h=744,xreg=as.matrix(mods$test[[10]][,5])) %>% cbind.data.frame(mods$test[[10]]$block) %>% write.csv("test.csv")
+
+
+
+```
+
+```{r trend and random forest}
 #Write a function to decompose the time series and then get the trend, use random forest to 
-##################################### regression tree ##################
+######################.
 
 trend_fn<-function(df){
   x<-stl(df$ts,s.window="periodic",robust=T)
@@ -224,8 +272,9 @@ mods<- mods %>% mutate(trends=map(data,trend_fn)) %>% mutate(decom_ts=map(data,d
 
 
 
-
 ```
+
+
 
 Alright, got my modeling framework set up. now let's construct the model functions. Starting with the classical Box-Jenkins approach among others.
 
