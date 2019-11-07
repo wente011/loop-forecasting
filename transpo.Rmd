@@ -12,42 +12,59 @@ library(imputeTS)
 library(dygraphs)
 library(lubridate)
 library(scales)
+library(forecast)
 
 ```
 
 
 ```{r data loading}
-data<-read_csv("transpo2.csv")
+data<-read_csv("transpo3.csv")
 data$Timestamp %<>% mdy_hm() 
-names(data)<-c("time","real","block")
+#names(data)<-c("time","real","block")
 
-data$block %<>% na_interpolation()
-data$real %<>% na_interpolation()
-data$hour<-hour(data$time)
-data$date<-as.Date(data$time)
-data$block<-data$block*.25 #to kilowatt-hour
+data$ramp1 %<>% na_interpolation() 
+data$ramp2 %<>% na_interpolation()
+data$ramp3 %<>% na_interpolation()
+data$sub1 %<>% na_interpolation()
+data$sub2 %<>% na_interpolation()
 
+
+data[,2:6]<-data[,2:6]*.25   #convert to kWh/hour
+#data$real %<>% na_interpolation()
+data$hour<-hour(data$Timestamp)
+data$date<-as.Date(data$Timestamp)
+#data$block<-data$bock*.25 #to kilowatt-hour
+data$block<-(data$sub1 + data$sub2)-(data$ramp1 + data$ramp2 + data$ramp3)
 #Let's get that data into hourly
 data2<- data %>% group_by(hour,date) %>% summarise_at("block",sum) %>% mutate(time=paste0(date," ",hour,":","00")) %>% mutate_at("time",ymd_hm) %>% arrange(time)
 
 #data2$ts<-as.xts(data2$real,order.by = data2$time)
 
-data2$ts<-xts(data2$block,order.by = data2$time,frequency = 24)
-attr(data2$ts,'frequency')<-24
-periodicity(data2$ts)
+
+
+data2$ts<-msts(data2$block,seasonal.periods = c(24,7*24))
+
+
+mstlp<-data2$ts %>% mstl()
+
+mstlp %>% autoplot()
 
 transportation.xts<-data2$ts
 
-decom<-decompose(as.ts(transportation.xts))
-plot(decom)
-data2$trend<-decom$trend
+
+data2$trend<-mstlp[,2]
 
 gg1<-data2 %>% ggplot(aes(x=date,y=trend)) + geom_line() + geom_smooth()   + scale_x_date(date_labels = "%b %y",breaks="2 months") + ylab("kWh/hr") + xlab("Date")+ theme(axis.text.x=element_text(angle=45))
 gg1
 
 #daily peaks
 
-data3<- data2 %>% group_by(date) %>% summarise_at("block",max) %>% ggplot(aes(x=date,y=block)) + geom_line() + geom_smooth()   + scale_x_date(date_labels = "%b %y",breaks="2 months") + ylab("Peak kWh/hr") + xlab("Date")+ scale_y_continuous(breaks=seq(250,1500,250)) + theme(axis.text.x=element_text(angle=45))
+data3<- data2 %>% group_by(date) %>% summarise_at("block",max) %>% ggplot(aes(x=date,y=block)) + geom_line() + geom_smooth()   + scale_x_date(date_labels = "%b %y",breaks="2 months") + ylab("Peak kWh/hr") + xlab("Date")+ scale_y_continuous(breaks=seq(250,1500,250)) + theme(axis.text.x=element_text(angle=45)) + ggtitle("Daily peaks (maximum kW) at Transportation")
+
+
+
+data3.2<- data2 %>% group_by(date) %>% summarise_at("block",max)
+data.32$
   
 ```
 

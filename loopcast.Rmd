@@ -19,6 +19,7 @@ library(timeDate)
 #remotes::install_github("fnoorian/mltsp")
 library(mltsp)
 library(e1071)
+library(randomForest)
 
 
 ```
@@ -162,7 +163,7 @@ mods<- mods %>% mutate(data=map(data,msts_fn))
 #Testing the tbats model
 
 arima_fn<-function(df){
-  xreg1=as.matrix(df$weekday)          
+  xreg1=as.matrix(df$weekday,df$)          
   auto.arima(df$msts1,xreg=xreg1)              
 }
 
@@ -283,9 +284,44 @@ ARX with Bayesian Regulation back-propagation showed the best overall performanc
 
 The nonlinear autoregressive network with exogenous inputs(NARX) is a mixture of Neural Network and Time Series methodsand is based on the linear Auto Regressive Model with Exogenousinputs (ARX)
 
-```{r small train set}
+```{r daily peak modelling: ML and other}
+escape.POSIXt <- dplyr:::escape.Date
+
+dpks_fn<-function(df){
+df2<- df %>% #mutate_at("date",as_factor) %>%
+   group_by(date) %>% filter(block==max(block)) %>% ungroup(df2) %>% #a nice code to filter the maxes, while retaining all other columns
+ mutate(pk_prct=block/max(block)) %>% mutate(pk=ifelse(block==max(block),1,0))
+  return(df2)
+}
+
+mods2<-dpks_fn(d2)
+
+################# Random Forest Model #################
+set.seed(100)
+train<-sample(nrow(mods2), 0.7*nrow(mods2), replace = FALSE)
+TrainSet <- mods2[train,]
+ValidSet <- mods2[-train,]
+  
+rf1<- randomForest(pk_prct~ hour + weekday + tmpf + dwpf + p01i + vsby + sknt + month, mtry = 8,ntree=500, data = TrainSet, importance = TRUE)
+rf1
+
+# Predicting on train set
+predTrain <- predict(rf1, TrainSet)
+# Checking classification accuracy
+accuracy(rf1$y,rf1$predicted)
+predTest<-predict(rf1, ValidSet)
+accuracy(rf1$y,predTest) #15% MAE, not very good.  
+
+plot(predTest)
+
+#################### neural network #############
+mods2$bxts<-as.xts(mods2$block,order.by=mods2$date,frequency=2)
+attr(mods2$bxts,"frequency")<-2
+test<-mods2[1:1155,]
 
 
+nnet1<-nnetar(y=test$bxts,P=2,xreg=as.matrix(test[,c(5,7,8,9)]),lamda="auto")
+fcast<-forecast(nnet1,xreg=mods2[1155:2309,c(5,7,8,9)])
 
 ```
 
@@ -325,5 +361,8 @@ mape(vals[,2],vals[,1])   #3.34% mean percent error
 ```
 
 
+```{r}
+
+```
 
 
