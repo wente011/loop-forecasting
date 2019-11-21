@@ -321,7 +321,7 @@ test<-mods2[1:1155,]
 
 
 nnet1<-nnetar(y=test$bxts,P=2,xreg=as.matrix(test[,c(5,7,8,9)]),lamda="auto")
-fcast<-forecast(nnet1,xreg=mods2[1155:2309,c(5,7,8,9)])
+fcast<-forecast(nnet1,xreg=as.matrix(mods2[1155:2309,c(5,7,8,9)]))
 
 ```
 
