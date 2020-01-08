@@ -8,9 +8,9 @@ library(lubridate)
 wd<-"https://www.ncdc.noaa.gov/cdo-web/api/v2/{endpoint}"
 options(noaakey = tok)
 
-
+ghcnd_clear_cache()
 data<-meteo_tidy_ghcnd("USW00014922", keep_flags = FALSE, var = "all",
-                 date_min = NULL, date_max = "2019-10-01")
+                 date_min = NULL, date_max = "2019-12-17")
 
 data$prcp[9:length(data$prcp)]<-na_interpolation(data$prcp[9:length(data$prcp)])
 

@@ -1,18 +1,22 @@
 ---
-title: "forecast1"
+title: "Transportation Building Analysis"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(magrittr)
+library(mgcv)
 library(tidyverse)
-library(xts)
+library(gganimate)
+library(broom)
+library(gifski)
 library(imputeTS)
-library(dygraphs)
+#library(dygraphs)
 library(lubridate)
 library(scales)
 library(forecast)
+library(tidypredict)
 
 ```
 
@@ -54,17 +58,65 @@ transportation.xts<-data2$ts
 
 data2$trend<-mstlp[,2]
 
-gg1<-data2 %>% ggplot(aes(x=date,y=trend)) + geom_line() + geom_smooth()   + scale_x_date(date_labels = "%b %y",breaks="2 months") + ylab("kWh/hr") + xlab("Date")+ theme(axis.text.x=element_text(angle=45))
+gg1<-data2 %>% ggplot(aes(x=date,y=trend)) + geom_line() + geom_smooth()   + scale_x_date(date_labels = "%b %y",breaks="2 months") + ylab("kWh/hr") + xlab("Date")+ theme(axis.text.x=element_text(angle=45)) + ggtitle("Decomposition: Transportation Trend")
 gg1
 
 #daily peaks
 
 data3<- data2 %>% group_by(date) %>% summarise_at("block",max) %>% ggplot(aes(x=date,y=block)) + geom_line() + geom_smooth()   + scale_x_date(date_labels = "%b %y",breaks="2 months") + ylab("Peak kWh/hr") + xlab("Date")+ scale_y_continuous(breaks=seq(250,1500,250)) + theme(axis.text.x=element_text(angle=45)) + ggtitle("Daily peaks (maximum kW) at Transportation")
+data3
 
 
 
-data3.2<- data2 %>% group_by(date) %>% summarise_at("block",max)
-data.32$
   
+```
+
+## Update with new dataset
+```{r new data loading}
+df<-read_csv("transpo4.csv")
+
+df %<>% mutate_if(is.numeric,na_interpolation)
+names(df)<-c("timestamp","bkw1","pf1","realkw1","bkw2","pf2","realkw2")
+
+
+
+#Daily peaks curve extended 
+df2<-df %>% mutate_at(c("bkw1","realkw1","bkw2","realkw2"),function(x) x*.25) %>%   
+        mutate(Month=month(timestamp),Date=as.Date(timestamp),Hour=hour(timestamp)) %>% group_by(Date,Hour) %>%
+        summarize(bkw1=sum(bkw1), bkw2=sum(bkw2), realkw1=sum(realkw1), realkw2=sum(realkw2),pf2=mean(pf2),pf1=mean(pf1)) %>% ungroup() %>%         mutate(timestamp=paste0(Date," ",Hour,":00") %>% ymd_hm())
+
+
+#could add smoothing parameter here.                           
+gpks<-df2 %>% group_by(Date) %>% summarize(bkw=max(bkw1 + bkw2)) %>% ungroup() %>% mutate(my=paste0(month(Date),"-",year(Date)))
+gpks$bkw[gpks$bkw==max(gpks$bkw)]<-977.5 
+                 
+
+gpks2<-df2 %>% mutate(bkw=bkw1 + bkw2,my=paste0(month(Date),"-",year(Date)),weekly=Date %>% as.POSIXlt %>% (function(x){ y<-x$wday})) %>% group_by(my) %>% nest() %>% mutate(mods=map(data, ~gam(.$bkw ~ s(.$Hour,bs="cr",k=24) + s(.$weekly,bs="ps",k=7),family=gaussian))) %>% mutate(aug=map(mods,~augment(.x))) %>% unnest(aug)
+      
+
+                                                           
+mods<-gpks2 
+
+period=48
+
+window<-df2$
+
+
+staticplot<- gpks %>% ggplot(aes(x=Date,y=bkw,group=my)) + geom_line() + geom_smooth() +
+   scale_x_date(date_labels = "%b %y",breaks="2 months") + ylab("Peak kWh/hr") + xlab("Date")+ 
+  scale_y_continuous(breaks=seq(250,1500,250)) + 
+  theme(axis.text.x=element_text(angle=45,size=14),axis.text.y=element_text(size=14)) + 
+      ggtitle("Daily peaks (maximum kW) at Transportation") 
+      
+      
+                                                                                                 
+anim = staticplot + transition_reveal(Date) + ease_aes("cubic-in-out")
+
+
+animate(anim, 2000, fps = 30,  width = 1000, height = 800, 
+renderer = gifski_renderer("transp.gif"))
+
+
+
 ```
 
