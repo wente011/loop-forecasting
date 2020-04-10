@@ -13,6 +13,8 @@ library(rnoaa)
 library(readxl)
 library(magrittr)
 library(nnet)
+library(rvest)
+library(htmltab)
 library(lubridate)
 
 knitr::opts_chunk$set(echo = TRUE)
@@ -20,7 +22,15 @@ knitr::opts_chunk$set(echo = TRUE)
 
 
 
-```{r cars}
-summary(cars)
+```{r data scrape, include=F}
+url<-"http://160.94.1.5/?command=TableDisplay&table=Hour&records=3000"
+data<-read_html(x=url)
+data2<-html_table(data,header=T,fill=F)
+
+data3<-htmltab(doc=url)
+
+test<-html_nodes(data, "Hour")
+
+
 ```
 
