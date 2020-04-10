@@ -91,7 +91,9 @@ gpks<-df2 %>% group_by(Date) %>% summarize(bkw=max(bkw1 + bkw2)) %>% ungroup() %
 gpks$bkw[gpks$bkw==max(gpks$bkw)]<-977.5 
                  
 
-gpks2<-df2 %>% mutate(bkw=bkw1 + bkw2,my=paste0(month(Date),"-",year(Date)),weekly=Date %>% as.POSIXlt %>% (function(x){ y<-x$wday})) %>% group_by(my) %>% nest() %>% mutate(mods=map(data, ~gam(.$bkw ~ s(.$Hour,bs="cr",k=24) + s(.$weekly,bs="ps",k=7),family=gaussian))) %>% mutate(aug=map(mods,~augment(.x))) %>% unnest(aug)
+gpks2<-df2 %>% mutate(bkw=bkw1 + bkw2,my=paste0(month(Date),"-",year(Date)),weekly=Date %>% as.POSIXlt %>% (function(x){ y<-x$wday})) %>% group_by(my) %>% nest() %>% mutate(mods=map(data, ~gam(.$bkw ~ s(.$Hour,bs="cr",k=24) + s(.$weekly,bs="ps",k=7),family=gaussian))) %>% mutate(aug=map(mods,~augment(.x))) %>% unnest(aug) %>% ungroup()
+
+gpks2$Date<-df2$Date
       
 
                                                            
@@ -99,10 +101,10 @@ mods<-gpks2
 
 period=48
 
-window<-df2$
 
 
-staticplot<- gpks %>% ggplot(aes(x=Date,y=bkw,group=my)) + geom_line() + geom_smooth() +
+
+staticplot<- gpks2 %>% ggplot(aes(x=Date,y=..bkw,group=my)) + geom_point() + geom_line(aes(x=Date,y=.fitted)) +   
    scale_x_date(date_labels = "%b %y",breaks="2 months") + ylab("Peak kWh/hr") + xlab("Date")+ 
   scale_y_continuous(breaks=seq(250,1500,250)) + 
   theme(axis.text.x=element_text(angle=45,size=14),axis.text.y=element_text(size=14)) + 

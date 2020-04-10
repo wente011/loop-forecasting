@@ -1,0 +1,26 @@
+---
+title: "CC_solar_benchmarking"
+author: "Jordan Wente"
+date: "April 10, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+library(tidyverse)
+library(imputeTS)
+library(rnoaa)
+library(readxl)
+library(magrittr)
+library(nnet)
+library(lubridate)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r cars}
+summary(cars)
+```
+
