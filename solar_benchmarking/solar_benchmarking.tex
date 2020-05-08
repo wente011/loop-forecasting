@@ -1,0 +1,222 @@
+\documentclass[]{article}
+\usepackage{lmodern}
+\usepackage{amssymb,amsmath}
+\usepackage{ifxetex,ifluatex}
+\usepackage{fixltx2e} % provides \textsubscript
+\ifnum 0\ifxetex 1\fi\ifluatex 1\fi=0 % if pdftex
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+\else % if luatex or xelatex
+  \ifxetex
+    \usepackage{mathspec}
+  \else
+    \usepackage{fontspec}
+  \fi
+  \defaultfontfeatures{Ligatures=TeX,Scale=MatchLowercase}
+\fi
+% use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+% use microtype if available
+\IfFileExists{microtype.sty}{%
+\usepackage[]{microtype}
+\UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\PassOptionsToPackage{hyphens}{url} % url is loaded by hyperref
+\usepackage[unicode=true]{hyperref}
+\hypersetup{
+            pdftitle={Captiol Complex Solar Benchmarking},
+            pdfauthor={Jordan Wente},
+            pdfborder={0 0 0},
+            breaklinks=true}
+\urlstyle{same}  % don't use monospace font for urls
+\usepackage[margin=1in]{geometry}
+\usepackage{longtable,booktabs}
+% Fix footnotes in tables (requires footnote package)
+\IfFileExists{footnote.sty}{\usepackage{footnote}\makesavenoteenv{long table}}{}
+\usepackage{graphicx,grffile}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+% Scale images if necessary, so that they will not overflow the page
+% margins by default, and it is still possible to overwrite the defaults
+% using explicit options in \includegraphics[width, height, ...]{}
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+\IfFileExists{parskip.sty}{%
+\usepackage{parskip}
+}{% else
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt plus 2pt minus 1pt}
+}
+\setlength{\emergencystretch}{3em}  % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{0}
+% Redefines (sub)paragraphs to behave more like sections
+\ifx\paragraph\undefined\else
+\let\oldparagraph\paragraph
+\renewcommand{\paragraph}[1]{\oldparagraph{#1}\mbox{}}
+\fi
+\ifx\subparagraph\undefined\else
+\let\oldsubparagraph\subparagraph
+\renewcommand{\subparagraph}[1]{\oldsubparagraph{#1}\mbox{}}
+\fi
+
+% set default figure placement to htbp
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+
+
+\title{Captiol Complex Solar Benchmarking}
+\author{Jordan Wente}
+\date{April 10, 2020}
+
+\begin{document}
+\maketitle
+
+This is a script to compare and benmark solar PV performance.
+
+\subsection{Data Sources}\label{data-sources}
+
+We incorporate weather data as to normalize solar AC output into the
+grid. The data is form the UofM St.~Paul Campus, DNR MESONET station ID:
+UMGM5.
+
+There is an API to get data in corrected metric units, watts/m2. Measure
+is in Global Shortwave Irradiance. The device is ``The Diffuse
+Pyranometer'' Model 8-48. \url{https://download.synopticdata.com/}. All
+data is aggregated from half-hourly interval to hourly interval.
+
+For PV performance data, we pull real power logged values at 15-min
+interval form the PME system. We convert these values into hourly
+(kWh/hr) values, real power, for system-level analysis. At the inverter
+level, we simply pull in current (A,B,C) as well as inverter level power
+output. We first use linear interpolation to fill in any missing values.
+We the convert all values to hourly interval.
+
+\textbf{Period of analyis:} 2020-03-17 00:00 to 2020-04-11 23:00
+
+To gauge the overall capacity factor as a function of solar irradiance,
+we will calculate two metrics: the iverter-loading ratio and the
+capacity factor (AC), ilr and cfac, respectively.
+
+ADM: 65.5kwdc / 61.7kwac - has the lowest DC/AC ratio (1.06) DOT:
+86.9kwdc / 72kwac - 1.2 ratio Stassen: 151kWdc / 120kWac - 1.2583
+
+\includegraphics{solar_benchmarking_files/figure-latex/intial viz-1.pdf}
+\includegraphics{solar_benchmarking_files/figure-latex/intial viz-2.pdf}
+\includegraphics{solar_benchmarking_files/figure-latex/intial viz-3.pdf}
+
+\begin{verbatim}
+## `geom_smooth()` using method = 'loess' and formula 'y ~ x'
+## `geom_smooth()` using method = 'loess' and formula 'y ~ x'
+## `geom_smooth()` using method = 'loess' and formula 'y ~ x'
+\end{verbatim}
+
+\includegraphics{solar_benchmarking_files/figure-latex/intial viz-4.pdf}
+
+\begin{verbatim}
+## `geom_smooth()` using method = 'loess' and formula 'y ~ x'
+## `geom_smooth()` using method = 'loess' and formula 'y ~ x'
+## `geom_smooth()` using method = 'loess' and formula 'y ~ x'
+\end{verbatim}
+
+\includegraphics{solar_benchmarking_files/figure-latex/intial viz-5.pdf}
+
+\begin{verbatim}
+## `geom_smooth()` using method = 'loess' and formula 'y ~ x'
+## `geom_smooth()` using method = 'loess' and formula 'y ~ x'
+## `geom_smooth()` using method = 'loess' and formula 'y ~ x'
+\end{verbatim}
+
+\includegraphics{solar_benchmarking_files/figure-latex/intial viz-6.pdf}
+
+\begin{verbatim}
+## Time difference of 25.33333 days
+\end{verbatim}
+
+\begin{longtable}[]{@{}lr@{}}
+\caption{Key Performance Indicators for 03/17 - 04/11}\tabularnewline
+\toprule
+metric & value\tabularnewline
+\midrule
+\endfirsthead
+\toprule
+metric & value\tabularnewline
+\midrule
+\endhead
+Revenue per day & 3.486648\tabularnewline
+Admin kWh/day & 3.061960\tabularnewline
+DOT kWh/day & 3.525566\tabularnewline
+Global Horizontal Irrd. (kWh/m2) & 87.907250\tabularnewline
+Revenue MWh & 13.162096\tabularnewline
+Admin MWh & 5.013959\tabularnewline
+DOT MWh & 7.659293\tabularnewline
+\bottomrule
+\end{longtable}
+
+\subsubsection{Discussion on Revenue
+performance:}\label{discussion-on-revenue-performance}
+
+Let's ground these results with the PVsyt model output.
+
+Comparing the results to the simulation in PVSyst, we can expect that:
+
+114.4 GHI = kWh/m2 translates to roughly 16.65 MWh for the month of
+March. We have less than 1 month, and likely cloudy. Missing five days.
+As such, we can assume 145.542 kWh AC into the grid per kWh/m2 of GHI.
+We have observed a production of 13.2 MWh from the Revenue system.
+
+This translates to: 145.542*87.9/1000 = 12.8 MWh expected output (for
+Month of March). The system is thus performing within error of the
+simulation, a 3\% exceeded performance.
+
+We can also take a mid-point from the PVSyst simulation, to better
+capture the interval we have between April and March.
+
+128.65 kWh/m2 GHI -\textgreater{} 17.93 MWh, or 139.3 kWh AC/kWh/m2.
+
+REV performns -\textgreater{} 150 kWh AC/kWh/m2
+
+\subsubsection{Discussion on ADM
+performance:}\label{discussion-on-adm-performance}
+
+Looking the efficiency cuves as a function of irradiance, it looks like
+ADM is partially shaded. There is evidence for a slight
+underperformance. The slope between inverter-loading ratio and global
+horizontal irradiance should be more equivalent between systems. Using a
+midpoint between Mar and Apr, ADM is expected to perform: 7.705 MWh for
+128.65 kWh/m2, a ratio of 59.89 kWh AC/kWh/m2.
+
+In reality, Admin performs -\textgreater{} 5.01MWh*1000
+kWh/MWh/87.9kWh/m2 = 56.99 kWh/m2, a -4\% difference in performance from
+the modeled result.
+
+\subsubsection{Discussion on DOT
+performance:}\label{discussion-on-dot-performance}
+
+DOT should have ratio of 80.37 kWh AC/kWh/m2 fpr this period. In
+reality, DOT performs: 7.66*1000/87.9 = 87.1 kWh AC/kWh/m2, somewhat
+higher (\textasciitilde{}8\%) than the anticipated.
+
+\subsubsection{Conclusion}\label{conclusion}
+
+There is strong evidence that DOT and REV are performing at expectation
+if not slighly better than expectation. DOT is performing at high
+capacity factors in particular. It gets near perfect southern exposure
+with good solar resource. ADM is not performing as well. Partial shading
+could be having an effect. This is worth further investigating at the
+inverter level.
+
+We should take all solar irradicance measures with a grain of salt. In
+the aggregate, the solar irradiance totals are likely to be very similar
+between the St.~Paul campus and the Capitol. However, in the short
+interval, there is likely a high amount of error. A blowing over cloud
+can make a big difference. Therefore, benchmarking should be done on
+clear spring days, with mild temperatues and no clouds whatsovever. The
+pyranometer states that it has an accuracy of 96.5\%. Therefore, an
+observed production that is within 3.5\% of the model is very
+reasonable.
+
+\end{document}

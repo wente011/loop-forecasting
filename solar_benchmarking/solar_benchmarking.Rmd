@@ -1,15 +1,19 @@
 ---
-title: "CC_solar_benchmarking"
+title: "Captiol Complex Solar Benchmarking"
 author: "Jordan Wente"
 date: "April 10, 2020"
 output: html_document
 ---
 
+This is a script to compare and benchmark solar PV performance from systems at the DOT, Admin, and Revenue buildings. 
+
 ```{r setup, include=FALSE}
 
 library(tidyverse)
 library(imputeTS)
+library(plotly)
 library(rnoaa)
+library(ggthemes)
 library(readxl)
 library(magrittr)
 library(nnet)
@@ -21,16 +25,369 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
+##Data Sources
+We incorporate  weather data as to normalize solar AC output into the grid. The data is form the UofM St. Paul Campus, DNR MESONET station ID: UMGM5. 
+
+There is an API to get data in corrected metric units, watts/m2. Measure is in Global Shortwave Irradiance. The device is "The Diffuse Pyranometer” Model 8-48. https://download.synopticdata.com/. All data is aggregated from half-hourly interval to hourly interval. 
+
+For PV performance data, we pull real power logged values at 15-min interval form the PME system. We convert these values into hourly (kWh/hr) values, real power, for system-level analysis. At the inverter level, we simply pull in current (A,B,C) as well as inverter level power output. We first use linear interpolation to fill in any missing values. We the convert all values to hourly interval. 
+
+
+**Period of analyis:** 2020-03-17 00:00 to 2020-04-11 23:00
 
 ```{r data scrape, include=F}
-url<-"http://160.94.1.5/?command=TableDisplay&table=Hour&records=3000"
-data<-read_html(x=url)
-data2<-html_table(data,header=T,fill=F)
+#url<-"http://160.94.1.5/?command=TableDisplay&table=Hour&records=3000"
+#data<-read_html("http://160.94.1.5/?command=TableDisplay&table=Hour&records=3000")
+#air_temp_set_1 -- 	Celsius
+#relative_humidity_set_1 ---	%
+#wind_speed_set_1 --	m/s
+#wind_direction_set_1	--- Degrees
+#wind_gust_set_1 ---	m/s
+#precip_accum_five_minute_set_1 --	Millimeters
+#precip_accum_one_hour_set_1 ---	Millimeters
+#solar_radiation_set_1 --	W/m**2
+#precip_accum_set_1 ---	Millimeters
+#volt_set_1 --	volts
+#dew_point_temperature_set_1d --	Celsius
 
-data3<-htmltab(doc=url)
+############################ weather data ##################################
+#need to convert hours back to central time
+sol<-read_csv("C:/Users/jwente/Documents/GitHub/loop-forecasting/solar_benchmarking/solarirrad.csv") %>%
+     mutate(Timestamp=(paste0(Date," ",Time) %>% mdy_hms) - hours(5),
+            Date=as.Date(Timestamp),
+            Hour=hour(Timestamp))
 
-test<-html_nodes(data, "Hour")
+#Converting the dataset from halfhour to hourly data.       
+
+sol2<-sol %>%
+        group_by(Date,Hour) %>%
+        summarise(air_temp=sum(air_temp)/2,
+                  relative_humidity=sum(relative_humidity)/2,
+                  solwhm2=sum((solar_radiation/2)),
+                  wind_direction=sum(wind_direction)/2,
+                  wind_gust=sum(wind_gust)/2,
+                  precip_accum_one_hour=sum(precip_accum_one_hour/2),
+                  precip_accum=sum(precip_accum),
+                  dew_point_temperature=sum(dew_point_temperature)/2
+                  ) %>%
+        ungroup()
+
+############################ PV data  #######################################
+
+## First real instance of credible data appears to be 03/17/2020 at 15:45.
+#Sum of the current phases to be able to then calculate total voltages. 
+
+pv<-read_csv("C:/Users/jwente/Documents/GitHub/loop-forecasting/solar_benchmarking/solar_export.csv") %>%
+    mutate(Timestamp=Timestamp %>% mdy_hm(),
+           Date=as.Date(Timestamp),
+           Hour=hour(Timestamp)) %>%
+    mutate_if(is.numeric,~ na_interpolation(.x)) %>%
+    mutate(aC1=`Admin.PV_Inverter_1#Current A#A` + `Admin.PV_Inverter_1#Current C#A` +       
+                `Admin.PV_Inverter_1#Current B#A`,
+           aC2=`Admin.PV_Inverter_2#Current A#A` + `Admin.PV_Inverter_2#Current C#A` +       
+                `Admin.PV_Inverter_2#Current B#A`,
+           aC3 = `Admin.PV_Inverter_3#Current A#A` + `Admin.PV_Inverter_3#Current C#A` +       
+                `Admin.PV_Inverter_3#Current B#A`,
+           
+           dC1=`DOT.PV_Inverter_1#Current B#A` + `DOT.PV_Inverter_1#Current C#A` + `DOT.PV_Inverter_1#Current B#A`,
+           
+           dC2=`DOT.PV_Inverter_2#Current B#A` + `DOT.PV_Inverter_2#Current C#A` + `DOT.PV_Inverter_2#Current B#A`,
+                
+           dC3=`DOT.PV_Inverter_3#Current B#A` + `DOT.PV_Inverter_3#Current C#A` + `DOT.PV_Inverter_3#Current B#A`,
+           
+           rC1 = `REV.PV_Inverter_1#Current B#A` + `REV.PV_Inverter_1#Current A#A` + 
+                  `REV.PV_Inverter_1#Current C#A`,
+           
+           rC2 = `REV.PV_Inverter_2#Current B#A` + `REV.PV_Inverter_2#Current A#A` + 
+                  `REV.PV_Inverter_2#Current C#A`,
+           
+           rC3 = `REV.PV_Inverter_3#Current B#A` + `REV.PV_Inverter_3#Current A#A` + 
+                  `REV.PV_Inverter_3#Current C#A`,
+           
+           rC4 = `REV.PV_Inverter_4#Current B#A` + `REV.PV_Inverter_4#Current A#A` + 
+                  `REV.PV_Inverter_4#Current C#A`,
+            
+           rC5 = `REV.PV_Inverter_5#Current B#A` + `REV.PV_Inverter_5#Current A#A` + 
+                  `REV.PV_Inverter_5#Current C#A`,
+           
+           akW= `Admin.PV_Inverter_1#Real Power#kW` + 
+                `Admin.PV_Inverter_2#Real Power#kW` +  `Admin.PV_Inverter_3#Real Power#kW`,
+           
+           dkW= `DOT.PV_Inverter_1#Real Power#kW` + `DOT.PV_Inverter_2#Real Power#kW` + `DOT.PV_Inverter_3#Real Power#kW`,
+           
+           rkW = `REV.PV_Inverter_1#Real Power#kW` + `REV.PV_Inverter_2#Real Power#kW` +
+                 `REV.PV_Inverter_3#Real Power#kW` + `REV.PV_Inverter_4#Real Power#kW` + `REV.PV_Inverter_5#Real Power#kW`
+           )
+
+#create a simplified dataset for comaring key hourly data. 
+
+pv2<- pv %>% 
+      group_by(Date,Hour) %>%
+      summarize(aC1=mean(aC1),
+                aC2=mean(aC2),
+                aC3=mean(aC3),
+                dC1=mean(dC1),
+                dC2=mean(dC2),
+                dC3=mean(dC3),
+                rC1=mean(rC1),
+                rC2=mean(rC2),
+                rC3=mean(rC3),
+                rC4=mean(rC4),
+                rC5=mean(rC5),
+                akW=sum(akW*.25),
+                dkW=sum(dkW*.25),
+                rkW=sum(rkW*.25),
+                akW1=sum(`Admin.PV_Inverter_1#Real Power#kW`*.25),
+                akW2=sum(`Admin.PV_Inverter_2#Real Power#kW`*.25),
+                akW3=sum(`Admin.PV_Inverter_3#Real Power#kW`*.25),
+                dkW1=sum(`DOT.PV_Inverter_1#Real Power#kW`*.25),
+                dkW2=sum(`DOT.PV_Inverter_2#Real Power#kW`*.25),
+                dkW3=sum(`DOT.PV_Inverter_3#Real Power#kW`*.25),
+                rkW1=sum(`REV.PV_Inverter_1#Real Power#kW`*.25),
+                rkW2=sum(`REV.PV_Inverter_2#Real Power#kW`*.25),
+                rkW3=sum(`REV.PV_Inverter_3#Real Power#kW`*.25),
+                rkW4=sum(`REV.PV_Inverter_4#Real Power#kW`*.25),
+                rkW5=sum(`REV.PV_Inverter_5#Real Power#kW`*.25)
+                ) %>%
+      ungroup() %>%
+      mutate(aC=aC1 + aC2 + aC3,
+             dC=dC1 + dC2 + dC3,
+             rC=rC1 + rC2 + rC3 + rC4,
+             a_ilr=akW/65.5,
+             d_ilr=dkW/86.9,
+             r_ilr=rkW/151,
+             a_cf=akW/61.7,
+             d_cf=dkW/72,
+             r_cf=rkW/120,
+             aV1=akW1*1000/aC1,
+             aV2=akW2*1000/aC2,
+             aV3=akW3*1000/aC3,
+             dV1=dkW1*1000/dC1,
+             dV2=dkW2*1000/dC2,
+             dV3=dkW3*1000/dC3,
+             rV1=rkW1*1000/rC1,
+             rV2=rkW2*1000/rC2,
+             rV3=rkW3*1000/rC3,
+             rV4=rkW4*1000/rC4
+             
+             
+      )
+      
+#Join the dataframes   
+#Now, we know for sure that there was little snowfall to none the week of 03/23 to 04/11. 
+#So, let's just filter out this last snowfall weekend. 
+pvw<-left_join(pv2,sol2,by=c("Hour","Date")) %>% 
+     mutate(tempf=(air_temp*(9/5)) + 32,
+            Timestamp=paste0(Date," ",Hour,":","00") %>% ymd_hm()
+            ) %>%
+     mutate_if(is.numeric,~na_interpolation(.x)) %>%
+     filter(Date < "2020-04-12") 
+      
+
+  
+```
+
+To gauge the overall capacity factor as a function of solar irradiance, we will calculate two metrics: the inverter-loading ratio and the capacity factor (AC), ilr and cfac, respectively. 
+
+ADM: 65.5kwdc / 61.7kwac - has the lowest DC/AC ratio (1.06)
+DOT: 86.9kwdc / 72kwac - 1.2 ratio
+Stassen: 151kWdc / 120kWac - 1.2583
+
+
+
+```{r intial viz, echo=FALSE, message=FALSE, warning=FALSE}
+
+gg1<-pvw %>% ggplot() + 
+             geom_line(aes(x=Timestamp,y=akW,color="ADM")) + 
+             geom_line(aes(x=Timestamp,y=dkW,color="DOT")) +
+             geom_line(aes(x=Timestamp,y=rkW,color="REV")) + 
+             scale_y_continuous("Reak Power kW",breaks=seq(0,120,10)) + 
+             ggtitle("PV Real Power Output") + 
+             xlab("Global Horizontal Irradiance (Watts/m2)")
+             
+              
+gg1
+
+gg2<-pvw %>% ggplot() + 
+             geom_line(aes(x=Timestamp,y=a_ilr,color="ADM")) + 
+             geom_line(aes(x=Timestamp,y=d_ilr,color="DOT")) +
+             geom_line(aes(x=Timestamp,y=r_ilr,color="REV")) + 
+             scale_y_continuous("ILR (kWAC/kWpDC)") + 
+             ggtitle("Inverter Loading Ratio") + 
+             xlab("Global Horizontal Irradiance (Watts/m2)")
+              
+
+gg2
+
+gg3<-pvw %>% ggplot() + 
+             geom_line(aes(x=Timestamp,y=a_cf,color="ADM")) + 
+             geom_line(aes(x=Timestamp,y=d_cf,color="DOT")) +
+             geom_line(aes(x=Timestamp,y=r_cf,color="REV")) + 
+             scale_y_continuous("Capacity Factor (kWAC/kWpAC)") + 
+             ggtitle("PV capacity factors")+
+             xlab("Global Horizontal Irradiance (Watts/m2)")
+
+
+gg3
+
+gg4<-pvw %>% ggplot() + 
+             geom_point(aes(x=solwhm2,y=a_cf,color="ADM",text=Timestamp)) +
+              geom_smooth(aes(x=solwhm2,y=a_cf,color="ADM")) + 
+             geom_point(aes(x=solwhm2,y=d_cf,color="DOT",text=Timestamp)) + 
+              geom_smooth(aes(x=solwhm2,y=d_cf,color="DOT")) + 
+             geom_point(aes(x=solwhm2,y=r_cf,color="REV",text=Timestamp)) + 
+              geom_smooth(aes(x=solwhm2,y=r_cf,color="REV")) + 
+             scale_y_continuous("Capacity Factor (kWAC/kWpAC)") + 
+             xlab("Global Horizontal Irradiance (Watts/m2)")
+            
+
+gg4
+
+
+
+gg4<-pvw %>% ggplot() + 
+             geom_point(aes(x=solwhm2,y=a_ilr,color="ADM")) + geom_smooth(aes(x=solwhm2,y=a_ilr,color="ADM")) + 
+             geom_point(aes(x=solwhm2,y=d_ilr,color="DOT")) + geom_smooth(aes(x=solwhm2,y=d_ilr,color="DOT")) + 
+             geom_point(aes(x=solwhm2,y=r_ilr,color="REV")) + geom_smooth(aes(x=solwhm2,y=r_ilr,color="REV")) + 
+             scale_y_continuous("Iverter Loading Ratio (kWAC/kWpDC)") + 
+             ggtitle("PV inverter loading ratio by irradiance") + 
+             xlab("Global Horizontal Irradiance (Watts/m2)")
+
+gg4
+
+gg5<-pvw %>% ggplot() + 
+             geom_point(aes(x=solwhm2,y=akW,color="ADM")) + geom_smooth(aes(x=solwhm2,y=akW,color="ADM")) + 
+             geom_point(aes(x=solwhm2,y=dkW,color="DOT")) + geom_smooth(aes(x=solwhm2,y=dkW,color="DOT")) + 
+             geom_point(aes(x=solwhm2,y=rkW,color="REV")) + geom_smooth(aes(x=solwhm2,y=rkW,color="REV")) + 
+             scale_y_continuous("PV outout kW AC") + 
+             ggtitle("PV AC kW by irradiance") + 
+              xlab("Global Horizontal Irradiance (Watts/m2)")
+
+gg5
+
 
 
 ```
+
+The table below displays KPIs for the period of analysis.
+```{r monthly summary, echo=FALSE, message=FALSE, warning=FALSE}
+
+#Delta days
+max(pvw$Timestamp) - min(pvw$Timestamp)  
+
+#ADM: 65.5kwdc / 61.7kwac - has the lowest DC/AC ratio (1.06)
+#DOT: 86.9kwdc / 72kwac - 1.2 ratio
+#Stassen: 151kWdc / 120kWac - 1.2583
+tab1<-pvw %>%
+            summarize(`Revenue kWh/kWp DC per day`=round(sum(rkW)/151/25.33333,2) ,
+                      `Admin kWh/kWp DC/day`=round(sum(akW)/65.5/25.33333,2),
+                       `DOT kWh/kWp DC/day`=round(sum(dkW)/86.9/25.33333,2), 
+                      `Global Horizontal Irrd. (kWh/m2)`=round(sum(solwhm2)/1000,2),
+                      `Revenue MWh`=round(sum(rkW)/1000,2) ,
+                      `Admin MWh`=round(sum(akW)/1000) ,
+                      `DOT MWh`=round(sum(dkW)/1000,2) 
+              
+                      ) %>% 
+            gather(metric,`Observed Data`)
+
+
+#tab1$`Modeled Data`<-c("n/a","n/a","n/a",128.7,)
+
+knitr::kable(tab1,caption = "Key Performance Indicators for 03/17 - 04/11")
+
+
+tab2<-c("Rev kWh/kWh_m2 of irradiance", "DOT kWh/kWh_m2 of irradiance", "Admin kWh/kWh_m2 of irradiance") %>% 
+      tibble() %>% rename(`Efficiency Measure`=".")
+
+tab2$`Expected (energy model)`<-c(139.3,80.4,59.9)
+tab2$`Observed`<-c(150,87.1,57.0)
+  
+knitr::kable(tab2,caption = "Performance Metrics: Expected vs. Observed")
+
+```
+
+###Discussion on Revenue performance: 
+Let's ground these results with the PVsyt model output. 
+
+Comparing the results to the simulation in PVSyst, we can expect that: 
+
+114.4 GHI = kWh/m2 translates to roughly 16.65 MWh for the month of March. 
+We have less than 1 month, and likely cloudy. Missing five days. As such, we can assume 145.542 kWh AC into the grid per kWh/m2 of GHI. We have observed a production of 13.2 MWh from the Revenue system.
+
+
+This translates to: 145.542*87.9/1000 = 12.8 MWh expected output (for Month of March). The system is thus performing within error of the simulation, a 3% exceeded performance. 
+
+We can also take a mid-point from the PVSyst simulation, to better capture the interval we have between April and March.
+
+128.65 kWh/m2 GHI -> 17.93 MWh, or 139.3 kWh AC/kWh/m2. 
+
+REV performs at 150 kWh AC/kWh/m2, substantially higher than expected. 
+
+###Discussion on ADM performance: 
+Looking the efficiency curves as a function of irradiance, it looks like ADM is partially shaded. There is evidence for a slight under performance. The slope between inverter-loading ratio and global horizontal irradiance should be more equivalent between systems. Using a midpoint between Mar and Apr, ADM is expected to perform: 7.705 MWh for 128.65 kWh/m2, a ratio of 59.89 kWh AC/kWh/m2.
+
+In reality, Admin performs -> 5.01MWh*1000 kWh/MWh/87.9kWh/m2 = 56.99 kWh/m2, a -4% difference in performance from the modeled result. 
+
+
+###Discussion on DOT performance: 
+DOT should have ratio of 80.37 kWh AC/kWh/m2 for this period. 
+In reality, DOT performs: 7.66*1000/87.9 = 87.1 kWh AC/kWh/m2, somewhat higher (~8%) than the anticipated.
+
+
+###Conclusion
+
+There is strong evidence that DOT and REV are performing at expectation if not slightly better than expectation. DOT is performing at high capacity factors in particular. It gets near perfect southern exposure with good solar resource. ADM is not performing as well. Partial shading could be having an effect. This is worth further investigating at the inverter level. 
+
+We should take all solar irradicance measures with a grain of salt. In the aggregate, the solar irradiance totals are likely to be very similar between the St. Paul campus and the Capitol. However, in the short interval, there is likely a high amount of error. A blowing over cloud can make a big difference. Therefore, benchmarking should be done on clear spring days, with mild temperatures and no clouds whatsoever. The pyranometer states that it has an accuracy of 96.5%. Therefore, an observed production that is within 3.5% of the model is very reasonable. 
+
+
+
+###Additional Plots
+The plot below displays the total output from Admin inverters. We pay particular attention to the inverter 3. From the as built, here is the oneline.
+
+![Admin Oneline](C:/Users/jwente/Documents/GitHub/loop-forecasting/solar_benchmarking/adminoneline.png)
+
+
+We can therefore assume which inverter is which based on the data, but should confirm. In the analysis period, inverter 3 has the lowest maximum output, at 11 kW. The kilowatt numbers to the right of the inverters in the one-line are in AC. Inverter 3 therefore has a 15 kWpAC rating, for a capacity factor calculation. 
+
+
+
+```{r additional plots, echo=F, message=FALSE, warning=FALSE}
+
+gg7<-pvw %>% filter(Hour >7,Hour<20) %>%
+             ggplot() + 
+             geom_point(aes(x=solwhm2,y=akW1/22.7,color="Inv1")) + 
+             geom_smooth(aes(x=solwhm2,y=akW1/22.7,color="Inv1"))+
+             geom_point(aes(x=solwhm2,y=akW2/24,color="Inv2")) + 
+             geom_smooth(aes(x=solwhm2,y=akW2/24,color="Inv2"))+
+             geom_point(aes(x=solwhm2,y=akW3/15,color="Inv3")) +
+             geom_smooth(aes(x=solwhm2,y=akW3/15,color="Inv3")) +
+             ggtitle("Admin Capacity Factor by Irradiance and Hour") +
+             xlab("Watts/m2") + 
+             ylab("kWAC/kWpAC") + 
+             facet_wrap(~Hour)
+  
+          
+gg7  
+
+
+
+gg8<-pvw %>% filter(Hour %in% c(9,10)) %>%
+             ggplot() + 
+             geom_point(aes(x=solwhm2,y=akW1/22.7,color="Inv1")) + 
+             geom_smooth(aes(x=solwhm2,y=akW1/22.7,color="Inv1"))+
+             geom_point(aes(x=solwhm2,y=akW2/24,color="Inv2")) + 
+             geom_smooth(aes(x=solwhm2,y=akW2/24,color="Inv2"))+
+             geom_point(aes(x=solwhm2,y=akW3/15,color="Inv3")) +
+             geom_smooth(aes(x=solwhm2,y=akW3/15,color="Inv3")) +
+             ggtitle("Admin Capacity Factor by Irradiance and Hour") +
+             xlab("Watts/m2") + 
+             ylab("kWAC/kWpAC") + 
+             facet_wrap(~Hour)
+ 
+gg8 
+```
+
+We see a non-linear function in the efficiency curve for inverter three at certain hours. The most obvious explanation is that there is some shading during morning and afternoon hours, during times of peak irradiance, the inverter has good efficiency. 
+
 
