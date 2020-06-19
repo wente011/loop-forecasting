@@ -1,0 +1,169 @@
+---
+title: "R Notebook"
+output: html_notebook
+author: Jordan Wente
+---
+
+```{r setup}
+library(tidyverse)
+library(imputeTS)
+library(rnoaa)
+library(readxl)
+library(magrittr)
+library(nnet)
+library(lubridate)
+
+
+
+```
+
+
+
+```{r functions}
+`%notin%` <- Negate(`%in%`)
+
+na0<-function(x){
+  y<-ifelse(is.na(x)==T,0,x)
+  return(y)
+  }
+
+
+
+```
+
+
+
+```{r data load, include=FALSE}
+#Read the data and melt 
+df<-read_csv("elec_chw2.csv") %>%
+    mutate_if(is.numeric,na_interpolation) %>%
+    mutate_at("Timestamp",mdy_hm) %>%
+    gather(Site,Value,-Timestamp) %>%
+    mutate(Metric=str_split(Site,"_",2,simplify = T)[,2] %>% as.factor,
+           Site=str_split(Site,"_",2,simplify = T)[,1] %>% as.factor,
+           Week=week(Timestamp),
+           Hour=hour(Timestamp),
+           Date=as.Date(Timestamp),
+           Month=month(Timestamp)
+          )
+
+df0<-read_csv("missing_elec.csv") %>%
+    mutate_if(is.numeric,na_interpolation) %>%
+    mutate_at("Timestamp",mdy_hm) %>%
+    gather(Site,Value,-Timestamp) %>%
+    mutate(Metric=str_split(Site,"_",2,simplify = T)[,2] %>% as.factor,
+           Site=str_split(Site,"_",2,simplify = T)[,1] %>% as.factor,
+           Week=week(Timestamp),
+           Hour=hour(Timestamp),
+           Date=as.Date(Timestamp),
+           Month=month(Timestamp)
+          )  %>% 
+    group_by(Site,Hour,Date) %>%  
+    summarise_at("Value",function(x) sum(x*(1/60))) %>%
+    ungroup() %>%
+    rename(bkw="Value")
+
+
+
+df1<- df %>% filter(Metric=="btuhr")%>% 
+             rename(btuhr="Value")  %>%
+             select(-Metric)        %>%        
+             group_by(Hour,Date,Site) %>%
+             summarize_at("btuhr",function(x) sum(x*25,na.rm=T)) %>%
+             ungroup()
+
+  
+df2<- df %>% filter(Metric == "bkw")%>% 
+             rename(bkw="Value")  %>%
+             select(-Metric)        %>%        
+             group_by(Hour,Date,Site) %>%
+             summarize_at("bkw",function(x) sum(x*25,na.rm=T)) %>%
+             ungroup()
+
+
+test<-bind_rows(df2,df0)
+df3<-left_join(df1,test)    
+
+
+
+
+
+
+###################### Get the weather data #########################
+tz_data<-"America%2FChicago" #TZ
+
+td<-today()
+
+wt<-getMSPw(station="MSP",2007,01,01,year2=year(td),month2=month(td),
+              day2=day(td),tz_data = tz_data) %>% 
+      mutate(tmpfm=na_interpolation(tmpf),
+             Timestamp=valid %>% as.character() %>% ymd_hm(),
+             Date=as.Date(Timestamp),
+             Hour= hour(Timestamp)) %>%
+      group_by(Date,Hour) %>%
+      summarize(tmpfm=mean(tmpfm))
+      mutate(HDD=ifelse(tmpfm<hsp,hsp-tmpfm,0),
+       #      CDD=ifelse(csp<tmpfm,tmpfm-csp,0),
+      #       Month=month(Date),
+       #      Year=year(Date),
+      #       `Start Date`=paste0(Month,"/","01","/",Year) %>% mdy()
+      #       )
+df3<-left_join(df3,wt,by=c("Hour","Date"))    
+
+```
+
+
+```{r correlations by hour,warning=FALSE}
+
+gg0<-df3 %>% 
+        filter(btuhr>0) %>%
+        ggplot(aes(x=log(bkw+1),y=log(btuhr+1))) +
+        geom_point() + 
+        geom_smooth() + 
+        facet_wrap(~Site)
+        
+        
+
+
+
+
+mntcor<-function(df){
+  y<-df %>% group_by(Week,Hour,Month) %>%
+  summarize(corrs=cor(bkw,btuhr))
+  return(y) 
+}
+
+
+#Simple correlation graph for each site
+cor2<- df3 %>%
+       filter(btuhr>0) %>%
+       group_by(Site,Hour) %>%
+       summarize(corrs=cor(bkw,btuhr)) %>%
+       ungroup() %>%
+       ggplot(aes(x=Hour,y=corrs)) +
+       
+
+
+
+
+
+
+gg1<-cor2 %>% ggplot(aes(x=as.factor(Hour),y=as.factor(Month),color=corrs)) +
+         geom_point() + 
+         facet_wrap(~Site)
+         
+
+
+
+
+#cor1<-df2 %>% 
+#        group_by(Site) %>%
+#        nest() %>%
+#        mutate(cors=map(data,mntcor))
+
+
+
+```
+
+
+
