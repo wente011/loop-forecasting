@@ -136,13 +136,18 @@ mntcor<-function(df){
 
 #Simple correlation graph for each site
 cor2<- df3 %>%
-       filter(btuhr>0) %>%
+       filter(btuhr>0,year(Date)<2020) %>%
        group_by(Site,Hour) %>%
+       filter(complete.cases(bkw,btuhr)) %>%
        summarize(corrs=cor(bkw,btuhr)) %>%
        ungroup() %>%
        ggplot(aes(x=Hour,y=corrs)) +
+       geom_line() + 
+       facet_wrap(~Site) + 
+       ggtitle("Hourly Correlation during Cooling Hours: Elec - CHW") + 
+       scale_y_continuous("Correclation Coeff",breaks=seq(-1,1,0.1))
        
-
+cor2
 
 
 
